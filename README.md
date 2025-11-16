@@ -1,7 +1,7 @@
 # Garmin Exporter
 
 Utility script that signs in to Garmin Connect and exports your activity
-history as FIT files for tools such as [garmr](https://github.com/liske/garmr).
+history as FIT files for tools such as [garmr](https://github.com/kullbachxyz/garmr).
 
 ## Usage
 
@@ -22,7 +22,7 @@ history as FIT files for tools such as [garmr](https://github.com/liske/garmr).
    to download:
 
    ```bash
-   python3 garmin_exporter.py --output ./fit-files
+   python3 garmin_exporter.py
    ```
 
    You can also set your credentials ahead of time:
