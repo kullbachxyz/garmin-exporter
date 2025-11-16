@@ -144,21 +144,68 @@ def sanitize_name(name: str) -> str:
 
 def download_fit_blob(client: "Garmin", activity_id: int) -> bytes:
     """Request the FIT blob for an activity via garminconnect."""
-    if hasattr(client, "download_activity_fit"):
-        return client.download_activity_fit(activity_id)
+    errors: list[str] = []
 
-    if ActivityDownloadFormat is not None:
+    def attempt(label: str, func):
         try:
-            return client.download_activity(activity_id, ActivityDownloadFormat.FIT)  # type: ignore[attr-defined]
-        except TypeError:
-            # Some releases expect a keyword argument instead of a positional flag.
-            return client.download_activity(activity_id, file_format=ActivityDownloadFormat.FIT)
+            return func()
+        except (TypeError, ValueError) as exc:
+            errors.append(f"{label}: {exc}")
+        return None
 
-    # Fall back to the legacy signature.
-    try:
-        return client.download_activity(activity_id, "fit")
-    except TypeError:
-        return client.download_activity(activity_id, file_format="fit")
+    if hasattr(client, "download_activity_fit"):
+        result = attempt("download_activity_fit", lambda: client.download_activity_fit(activity_id))
+        if result is not None:
+            return result
+
+    enum_cls = ActivityDownloadFormat
+    if enum_cls is None:
+        enum_cls = getattr(client, "ActivityDownloadFormat", None)
+    if enum_cls is None:
+        enum_cls = getattr(type(client), "ActivityDownloadFormat", None)
+
+    if enum_cls is not None:
+        enum_options: list[tuple[str, object]] = []
+        for attr in ("FIT", "ORIGINAL"):
+            if hasattr(enum_cls, attr):
+                enum_options.append((attr, getattr(enum_cls, attr)))
+
+        for attr_name, enum_value in enum_options:
+            result = attempt(
+                f"download_activity ActivityDownloadFormat.{attr_name}",
+                lambda enum_value=enum_value: client.download_activity(activity_id, enum_value),
+            )
+            if result is not None:
+                return result
+
+    # Try common positional/keyword fallbacks accepted by various releases.
+    fallback_calls = [
+        ("download_activity positional 'ORIGINAL'", ("ORIGINAL",), {}),
+        ("download_activity positional 'FIT'", ("FIT",), {}),
+        ("download_activity positional 'fit'", ("fit",), {}),
+        ("download_activity positional 'original'", ("original",), {}),
+        ("download_activity file_format='ORIGINAL'", (), {"file_format": "ORIGINAL"}),
+        ("download_activity file_format='FIT'", (), {"file_format": "FIT"}),
+        ("download_activity file_format='fit'", (), {"file_format": "fit"}),
+        ("download_activity file_format='original'", (), {"file_format": "original"}),
+        ("download_activity dl_fmt='ORIGINAL'", (), {"dl_fmt": "ORIGINAL"}),
+        ("download_activity dl_fmt='FIT'", (), {"dl_fmt": "FIT"}),
+        ("download_activity dl_fmt='fit'", (), {"dl_fmt": "fit"}),
+        ("download_activity dl_fmt='original'", (), {"dl_fmt": "original"}),
+    ]
+    for label, args, kwargs in fallback_calls:
+        result = attempt(
+            label,
+            lambda args=args, kw=kwargs: client.download_activity(activity_id, *args, **kw),
+        )
+        if result is not None:
+            return result
+
+    raise RuntimeError(
+        "Unable to download FIT file with any known garminconnect signatures. "
+        + "Tried: "
+        + "; ".join(errors)
+    )
 
 
 def extract_fit_bytes(payload: bytes) -> bytes:
